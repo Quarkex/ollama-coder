@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en" class="w-full h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AlpineJS Ollama Coder</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="m-0 p-0 flex flex-col w-full h-full">
+  <script>
+      async function generateCode(el, prompt, currentCode) {
+        if (!el) return;
+        if (!prompt) return;
+
+        var messages = [];
+
+        messages.push({
+          role: 'system',
+          content: 'You are an advanced AI coding assistant that generates websites.\nInclude all necessary HTML, CSS, and JavaScript in a single complete HTML file.\nAvoid use of alert or input. Make yourself a modal if you need it.\nUnless otherwise specified, use only AlpineJS and TailwindCSS as UI libraies, and vanilla css and javascript for the rest. Be sure to install them via CDN, and othervise ensure the HTML is absolutely self contained.\nAvoid at all costs sintaxes from other frameworks like React, Vue or Angular, or preprocessors like TypeScript unless specified.\nMake the app look like a polished, pretty, full website.\nBefore coding, write your plan in a \\\\\\\thinking code fence.\nWrap your code in a single \\\\\\\html code fence.\nDo NOT explain how your code works or how to run.\nKeep the chatter to an absolute minimum.'
+        });
+
+        if (currentCode && currentCode != '') messages.push({
+          role: 'system',
+          content: 'Ensure to respect as much as possible from the code already present while implementing the user request.\nThis is the current code to modify:\n\\\\\\html\n' + currentCode + '\n\\\\\\'
+        });
+
+        messages.push({
+          role: 'user',
+          content: prompt
+        });
+
+        try {
+          const response = await fetch(el.dataset.protocol + '://' + el.dataset.host + ':' + el.dataset.port + el.dataset.apiPath, {
+            method: 'POST',
+            mode: 'cors',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: el.dataset.model,
+              stream: false,
+              keep_alive: el.dataset.keepAlive,
+              messages: messages
+            })
+          });
+
+          if (!response.ok) {
+            console.error(response);
+            throw new Error('Failed to fetch code from API.');
+          }
+
+          const data = await response.json();
+
+          el.dispatchEvent(
+            new CustomEvent("updateCode", {
+              bubbles: true,
+              detail: data.message.content || 'No code generated.'
+            })
+          );
+        } catch (error) {
+          console.error('Error generating code:', error);
+          el.dispatchEvent(
+            new CustomEvent("updateCode", {
+              bubbles: true,
+              detail:  'An error occurred while generating code.'
+            })
+          );
+        }
+      };
+
+      function sanitizeHTML(code) {
+        // Ensure the input is a string
+        if (typeof code === 'string') {
+          const doctypeIndex = code.indexOf('<!DOCTYPE');
+          if (doctypeIndex !== -1) {
+            // Find the ending point of </html>
+            const htmlEndIndex = code.lastIndexOf('</html>');
+            if (htmlEndIndex !== -1) {
+              // Slice the content from <!DOCTYPE to </html>
+              return code.substring(doctypeIndex, htmlEndIndex + 7); // +7 to include the full "</html>"
+            }
+          }
+        }
+
+        return code;
+      }
+
+  </script>
+  <div
+    x-on:generate-code.window.camel="generateCode($el, prompt, code); prompt = null;"
+    x-on:update-code.window.camel="code = sanitizeHTML($event.detail);"
+    x-bind:class="code == '' ? 'flex-1 max-w-2xl mx-auto p-5 justify-center' : ''"
+    class="w-full h-full flex flex-col font-sans"
+
+    x-init="
+        urlParams = new URLSearchParams(window.location.search);
+        ollamaHost = !urlParams.has('ollama_host') ? '127.0.0.1' : urlParams.get('ollama_host');
+        ollamaPort = !urlParams.has('ollama_port') ? '11434' : urlParams.get('ollama_port');
+        ollamaProtocol = !urlParams.has('ollama_protocol') ? 'http' : urlParams.get('ollama_protocol');
+        ollamaApiPath = !urlParams.has('ollama_api_path') ? '/api/chat' : urlParams.get('ollama_api_path');
+        ollamaModel = !urlParams.has('ollama_model') ? 'llama3.2:3b' : urlParams.get('ollama_model');
+        ollamaKeepAlive = !urlParams.has('ollama_keep_alive') ? '30m' : urlParams.get('ollama_keep_alive');
+      "
+
+    x-bind:data-host="ollamaHost"
+    x-bind:data-port="ollamaPort"
+    x-bind:data-protocol="ollamaProtocol"
+    x-bind:data-api-path="ollamaApiPath"
+    x-bind:data-model="ollamaModel"
+    x-bind:data-keep-alive="ollamaKeepAlive"
+
+    x-data="{
+        urlParams: null,
+        ollamaHost: null,
+        ollamaPort: null,
+        ollamaProtocol: null,
+        ollamaApiPath: null,
+        ollamaModel: null,
+        ollamaKeepAlive: null,
+        prompt: '',
+        code: '',
+        showSourceCode: false,
+        starterPrompts: [
+          'Create a weather app',
+          'Build a to-do list',
+          'Generate a calculator app'
+        ]
+      }"
+  >
+    <h1 x-show="code == ''" class="text-2xl font-bold text-center">Dream it. Write it. Try it.</h1>
+    <p x-show="code == ''" class="text-center text-gray-700 mt-2 mb-4">Turn your ideas into fully functional apps automagically.</p>
+
+    <form @submit.prevent="$dispatch('generateCode')" x-bind:class="code !== '' ? 'py-2 border-b-2' : 'py-4'" class="flex-0 px-2 gap-2 flex flex-row items-center">
+
+      <input
+        x-on:generate-code.window.camel="$el.disabled = true"
+        x-on:update-code.window.camel="$el.disabled = false"
+        x-model="prompt"
+        type="text"
+        placeholder="Write down your idea..."
+        class="flex-1 px-4 py-2 border border-gray-300 rounded"
+      >
+      <button
+        x-on:generate-code.window.camel="$el.disabled = true"
+        x-on:update-code.window.camel="$el.disabled = false"
+        type="submit"
+        class="flex-0 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+      >
+        Generate
+      </button>
+      <button
+        x-show="code !== ''"
+        x-on:click="$dispatch('toggleSourceCode')"
+        x-text="showSourceCode ? 'Show Generated Content' : 'Show Generated Code'"
+        type="button"
+        class="flex-0 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+      ></button>
+    </form>
+
+    <div x-show="code == ''" x-on:generate-code.window.camel="$el.remove()" class="mt-4 gap-2 flex px-2 justify-between">
+      <template x-for="starter in starterPrompts" :key="starter">
+        <button
+          @click="prompt = starter; $dispatch('generateCode')"
+          class="flex-0 bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300"
+          x-text="starter"
+        ></button>
+      </template>
+    </div>
+
+    <div x-show="code" x-on:toggle-source-code.window.camel="showSourceCode = !showSourceCode" class="flex-1 flex">
+      <textarea x-show="showSourceCode === true" x-model="code" readonly class="flex-1 w-full h-full m-0 p-2 border border-gray-300 rounded"></textarea>
+      <iframe x-show="showSourceCode === false" x-bind:srcdoc="code" class="flex-1 w-full h-full border-none" sandbox="allow-scripts allow-modals allow-forms allow-popups allow-same-origin allow-top-navigation allow-downloads allow-presentation allow-pointer-lock"></iframe>
+    </div>
+  </div>
+</body>
+</html>
